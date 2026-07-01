@@ -50,7 +50,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 'object': 'list',
                 'data': [
                     {'id': 'claude-opus-4-8', 'object': 'model', 'owned_by': 'anthropic'},
+                    {'id': 'claude-opus-4-8[1m]', 'object': 'model', 'owned_by': 'anthropic'},
+                    {'id': 'claude-opus-4-8[1M]', 'object': 'model', 'owned_by': 'anthropic'},
                     {'id': 'claude-sonnet-4-6', 'object': 'model', 'owned_by': 'anthropic'},
+                    {'id': 'claude-sonnet-4-6[1m]', 'object': 'model', 'owned_by': 'anthropic'},
+                    {'id': 'claude-sonnet-4-6[1M]', 'object': 'model', 'owned_by': 'anthropic'},
                     {'id': 'claude-opus-4-8-20250612', 'object': 'model', 'owned_by': 'anthropic'},
                     {'id': 'claude-sonnet-4-6-20250514', 'object': 'model', 'owned_by': 'anthropic'},
                 ]
