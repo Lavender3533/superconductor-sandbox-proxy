@@ -7,19 +7,26 @@ import os, json, ssl, urllib.request
 K = os.environ.get('ANTHROPIC', '')
 CTX = ssl.create_default_context()
 
-# 要测的模型：你关心的可疑名 + 已知真实的做对照
+# 要测的模型：穷举 Sonnet 5 的各种可能写法 + 对照
 MODELS = [
-    # ---- 你想验证的 ----
+    # ---- Sonnet 5 各种命名格式 ----
     'claude-sonnet-5',
-    'claude-sonnet-5-20250101',
-    'gpt-5.5',
-    'claude-opus-4-7',
-    'claude-opus-4-7-20250101',
+    'claude-sonnet-5-0',
+    'claude-sonnet-5-1',
+    'claude-sonnet-4-8',
+    'claude-sonnet-4-7',
+    'claude-5-sonnet',
+    'claude-sonnet-5-20251001',
+    'claude-sonnet-5-20260101',
+    'sonnet-5',
+    'claude-sonnet-4-6-20250929',
+    # ---- 其它新模型探路 ----
+    'claude-opus-5',
+    'claude-haiku-5',
     # ---- 已知真实，做对照 ----
     'claude-opus-4-8',
     'claude-sonnet-4-6',
     'claude-haiku-4-5',
-    'claude-fable-5',
 ]
 
 def call(m):
