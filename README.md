@@ -79,8 +79,19 @@ curl https://8899-XXXX.tunnel.runloop.ai/health
 
 ## 找 tunnel URL
 
-> **TODO（待补充确认）**：SC / Runloop 里查看沙箱 8899 端口对外 tunnel 地址的具体位置。
-> 可能来源：SC 界面的端口/预览面板、Runloop dashboard、或沙箱内某个环境变量/命令。
+`bash run.sh` 启动时会**自动探测并打印**你的 tunnel URL（面板里那行），一般不用手动找。
+
+**原理**（自动探测失败时手动做）：Runloop 把沙箱的 Jupyter 通过环境变量
+`AGENT_JUPYTER_HOST` 暴露出来，格式是 `8888-<token>.tunnel.runloop.ai`。
+同一沙箱的 8899 端口共用同一个 `<token>`，把 `8888` 换成 `8899` 就是代理地址：
+
+```bash
+env | grep JUPYTER
+# 输出: AGENT_JUPYTER_HOST=8888-XXXX.tunnel.runloop.ai
+# 你的代理地址就是: https://8899-XXXX.tunnel.runloop.ai
+```
+
+> `<token>` 是 Runloop 给每个沙箱分配的，**换账号/换沙箱都会变**，每次新沙箱都要重新看。
 
 ---
 

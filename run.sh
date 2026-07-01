@@ -54,18 +54,17 @@ HEALTH=$(curl -s http://localhost:8899/health 2>/dev/null)
 [ "$HEALTH" = "ok" ] && HSTATUS="[OK] 运行中" || HSTATUS="[!!] 未就绪 ($HEALTH)"
 
 # --- 自动探测本沙箱的 tunnel URL ---
-detect_id() {
-    for v in RUNLOOP_DEVBOX_ID DEVBOX_ID RUNLOOP_SANDBOX_ID SANDBOX_ID; do
-        eval "val=\${$v:-}"
-        [ -n "$val" ] && { echo "$val"; return; }
-    done
-    id=$(grep -oE '(DEVBOX|SANDBOX)_ID="?[^"]+' /etc/environment 2>/dev/null | head -1 | sed -E 's/.*=//;s/"//g')
-    [ -n "$id" ] && { echo "$id"; return; }
-    h=$(hostname 2>/dev/null)
-    case "$h" in *dbx_*|*devbox*) echo "$h"; return;; esac
-}
-SID=$(detect_id)
-[ -n "$SID" ] && TURL="https://8899-${SID}.tunnel.runloop.ai" || TURL=""
+# 关键：Runloop 把 Jupyter 通过 AGENT_JUPYTER_HOST=8888-<token>.tunnel.runloop.ai 暴露出来，
+# 同一沙箱的 8899 端口共用同一个 <token>，只要把 8888 换成 8899 即可。
+JHOST="${AGENT_JUPYTER_HOST:-}"
+if [ -z "$JHOST" ]; then
+    JHOST=$(grep -oE 'AGENT_JUPYTER_HOST=[^ ]+' /etc/environment 2>/dev/null | head -1 | sed 's/AGENT_JUPYTER_HOST=//')
+fi
+if [ -n "$JHOST" ]; then
+    TURL="https://$(echo "$JHOST" | sed 's/^8888-/8899-/')"
+else
+    TURL=""
+fi
 
 # --- 漂亮的启动面板 ---
 echo ""
@@ -81,9 +80,8 @@ echo "│   你的 tunnel 地址（填进本地 ANTHROPIC_BASE_URL）：        
 echo "│                                                             │"
 printf   "│   %-58s│\n" "$TURL"
 else
-echo "│   ⚠ 未自动探测到沙箱 ID，手动找：                           │"
-echo "│     env | grep -iE 'devbox|sandbox|runloop'                 │"
-echo "│     URL 格式: https://8899-<沙箱ID>.tunnel.runloop.ai       │"
+echo "│   ⚠ 未探测到，手动找：env | grep JUPYTER               │"
+echo "│     把输出里的 8888- 换成 8899- 就是你的地址              │"
 fi
 echo "╰───────────────────────────────────────────────────────────╯"
 echo "  关掉终端后：进程靠 setsid 常驻；沙箱重建则下次开终端自动复活。"
