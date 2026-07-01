@@ -97,17 +97,35 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 url = GATEWAY + '/v1/messages'
                 if parsed.query:
                     url += '?' + parsed.query
-                req = urllib.request.Request(url, data=body, method='POST')
-                req.add_header('Content-Type', 'application/json')
-                req.add_header('anthropic-version', self.headers.get('anthropic-version', '2023-06-01'))
-                req.add_header('x-api-key', KEY)
-                # 转发 claude 的 anthropic-beta（缺了它 gateway 可能 400）
                 beta = self.headers.get('anthropic-beta')
-                if beta:
-                    req.add_header('anthropic-beta', beta)
-
+                anthropic_version = self.headers.get('anthropic-version', '2023-06-01')
                 ctx = ssl.create_default_context()
-                resp = urllib.request.urlopen(req, context=ctx, timeout=300)
+
+                # 上游 gateway 会间歇性抽风（401/5xx）——在代理侧快速重试，
+                # 不把抖动透给 claude（claude 默认重试慢、退避长）
+                import time as _t
+                resp = None
+                last_err = None
+                for attempt in range(6):
+                    try:
+                        req = urllib.request.Request(url, data=body, method='POST')
+                        req.add_header('Content-Type', 'application/json')
+                        req.add_header('anthropic-version', anthropic_version)
+                        req.add_header('x-api-key', KEY)
+                        if beta:
+                            req.add_header('anthropic-beta', beta)
+                        resp = urllib.request.urlopen(req, context=ctx, timeout=300)
+                        break
+                    except urllib.error.HTTPError as e:
+                        last_err = e
+                        # 401 和 5xx 是上游抖动，快速重试；4xx（非401）是真错，直接抛
+                        if e.code == 401 or e.code >= 500:
+                            print(f'[proxy] gateway {e.code}, retry {attempt+1}/6')
+                            _t.sleep(0.4)
+                            continue
+                        raise
+                if resp is None:
+                    raise last_err
 
                 self.send_response(resp.status)
                 self.send_header('Content-Type', 'text/event-stream')
