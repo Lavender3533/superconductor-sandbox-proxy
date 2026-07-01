@@ -1,27 +1,43 @@
 #!/bin/bash
-# SC 沙箱代理常驻脚本 — 尽最大努力在终端断开/沙箱重启后自愈
+# SC 沙箱代理常驻脚本 — 自动识别 Anthropic / OpenAI 沙箱，起对应代理
 # 用法: bash run.sh
 set -u
 REPO="/workspace/superconductor-sandbox-proxy"
 cd "$REPO" || exit 1
 
+# --- 检测沙箱类型：有 ANTHROPIC key 走 Claude，有 OPENAI key 走 GPT ---
+have_anthropic=0; have_openai=0
+[ -n "${ANTHROPIC:-}" ] && have_anthropic=1
+[ -n "${OPENAI:-}" ]    && have_openai=1
+grep -q '^ANTHROPIC=' /etc/environment 2>/dev/null && have_anthropic=1
+grep -q '^OPENAI='    /etc/environment 2>/dev/null && have_openai=1
+
+if [ "$have_anthropic" = 1 ]; then
+    KIND="anthropic"; SERVER="server.py";        CLIENT="Claude Code"
+elif [ "$have_openai" = 1 ]; then
+    KIND="openai";    SERVER="server_openai.py"; CLIENT="Codex"
+else
+    echo "!! 没检测到 ANTHROPIC 或 OPENAI key，无法确定沙箱类型"; exit 1
+fi
+
 # --- 清理旧进程 ---
-pkill -f "python3 server.py" 2>/dev/null
-pkill -f "proxy-watchdog"    2>/dev/null
+pkill -f "python3 server.py"        2>/dev/null
+pkill -f "python3 server_openai.py" 2>/dev/null
+pkill -f "proxy-watchdog"           2>/dev/null
 sleep 1
 
 git pull 2>/dev/null
 
-# --- 写 watchdog（每 15s 检查一次，挂了立刻拉起）---
-cat > /workspace/proxy-watchdog.sh << 'WDOG'
+# --- 写 watchdog（每 15s 检查一次，挂了立刻拉起，起的是检测到的 SERVER）---
+cat > /workspace/proxy-watchdog.sh << WDOG
 #!/bin/bash
 cd /workspace/superconductor-sandbox-proxy
 while true; do
     if ! curl -sf http://localhost:8899/health >/dev/null 2>&1; then
-        pkill -f "python3 server.py" 2>/dev/null
+        pkill -f "python3 $SERVER" 2>/dev/null
         sleep 1
-        setsid nohup python3 server.py > /workspace/proxy.log 2>&1 < /dev/null &
-        echo "[$(date)] proxy restarted, pid $!"
+        setsid nohup python3 $SERVER > /workspace/proxy.log 2>&1 < /dev/null &
+        echo "[\$(date)] proxy restarted, pid \$!"
     fi
     sleep 15
 done
@@ -29,7 +45,7 @@ WDOG
 chmod +x /workspace/proxy-watchdog.sh
 
 # --- 用 setsid 彻底脱离当前会话（比单纯 nohup 更硬，扛得住 session 清理）---
-setsid nohup python3 server.py             > /workspace/proxy.log    2>&1 < /dev/null &
+setsid nohup python3 "$SERVER"                 > /workspace/proxy.log    2>&1 < /dev/null &
 PROXY_PID=$!
 setsid nohup bash /workspace/proxy-watchdog.sh > /workspace/watchdog.log 2>&1 < /dev/null &
 WD_PID=$!
@@ -66,23 +82,36 @@ else
     TURL=""
 fi
 
-# --- 漂亮的启动面板 ---
+# --- 启动面板 ---
 echo ""
-echo "╭───────────────────────────────────────────────────────────╮"
-echo "│   Superconductor Sandbox Proxy                              │"
-echo "├───────────────────────────────────────────────────────────┤"
-printf   "│   代理状态   %-46s│\n" "$HSTATUS"
-printf   "│   进程 PID   proxy=%-8s watchdog=%-19s│\n" "$PROXY_PID" "$WD_PID"
-printf   "│   自启动     %-46s│\n" "$AUTOSTART"
-echo "├───────────────────────────────────────────────────────────┤"
+echo "╭─────────────────────────────────────────────────────────────╮"
+echo "│  Superconductor Sandbox Proxy                                 │"
+echo "├─────────────────────────────────────────────────────────────┤"
+printf   "│  沙箱类型   %-49s│\n" "$KIND  (客户端: $CLIENT)"
+printf   "│  代理状态   %-49s│\n" "$HSTATUS"
+printf   "│  进程 PID   %-49s│\n" "proxy=$PROXY_PID  watchdog=$WD_PID  自启动:$AUTOSTART"
+echo "╰─────────────────────────────────────────────────────────────╯"
+echo ""
 if [ -n "$TURL" ]; then
-echo "│   你的 tunnel 地址（填进本地 ANTHROPIC_BASE_URL）：         │"
-echo "│                                                             │"
-printf   "│   %-58s│\n" "$TURL"
+    echo "  你的 tunnel 地址（复制到本地客户端）："
+    echo "    $TURL"
+    echo ""
+    if [ "$KIND" = "anthropic" ]; then
+        echo "  ▶ Claude Code / CC Switch 配置："
+        echo "      ANTHROPIC_BASE_URL = $TURL"
+        echo "      ANTHROPIC_AUTH_TOKEN = dummy"
+        echo "      可用模型: claude-opus-4-8 / claude-sonnet-4-6 / claude-haiku-4-5"
+    else
+        echo "  ▶ Codex / OpenAI 客户端配置："
+        echo "      base_url = $TURL/v1"
+        echo "      api_key  = dummy"
+        echo "      可用模型: gpt-5.5 / gpt-5 / o3 / o1 / gpt-4.1 / gpt-4o"
+    fi
 else
-echo "│   ⚠ 未探测到，手动找：env | grep JUPYTER               │"
-echo "│     把输出里的 8888- 换成 8899- 就是你的地址              │"
+    echo "  ⚠ 未探测到 tunnel 地址，手动找: env | grep JUPYTER"
+    echo "    把输出里的 8888- 换成 8899- 就是你的地址"
 fi
-echo "╰───────────────────────────────────────────────────────────╯"
+echo ""
 echo "  关掉终端后：进程靠 setsid 常驻；沙箱重建则下次开终端自动复活。"
+echo "  查当前沙箱可用模型: python3 models.py"
 echo ""
