@@ -7,22 +7,21 @@ import os, json, ssl, urllib.request
 K = os.environ.get('ANTHROPIC', '')
 CTX = ssl.create_default_context()
 
-# 要测的模型：穷举 Sonnet 5 的各种可能写法 + 对照
+# 要测的模型：GPT 系列各种写法 + Claude 对照
 MODELS = [
-    # ---- Sonnet 5 各种命名格式 ----
+    # ---- GPT 各种命名格式 ----
+    'gpt-5.5',
+    'gpt-5-5',
+    'gpt-5.5-turbo',
+    'gpt-5',
+    'gpt-5-turbo',
+    'gpt-4.5',
+    'gpt-4o',
+    'o3',
+    'o1',
+    # ---- Sonnet 5 再确认 ----
     'claude-sonnet-5',
-    'claude-sonnet-5-0',
-    'claude-sonnet-5-1',
-    'claude-sonnet-4-8',
-    'claude-sonnet-4-7',
-    'claude-5-sonnet',
-    'claude-sonnet-5-20251001',
-    'claude-sonnet-5-20260101',
-    'sonnet-5',
-    'claude-sonnet-4-6-20250929',
-    # ---- 其它新模型探路 ----
     'claude-opus-5',
-    'claude-haiku-5',
     # ---- 已知真实，做对照 ----
     'claude-opus-4-8',
     'claude-sonnet-4-6',
