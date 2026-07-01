@@ -44,11 +44,28 @@ done
 WDOG
 chmod +x /workspace/proxy-watchdog.sh
 
+# --- 心跳记录器：每 60s 往 /workspace/heartbeat.log 写一行时间戳 ---
+# 沙箱被冻结时进程停摆，日志会出现"时间空洞"，恢复后看空洞就知道冻了多久。
+cat > /workspace/heartbeat.sh << 'HB'
+#!/bin/bash
+LOG=/workspace/heartbeat.log
+echo "=== heartbeat 启动 $(date '+%F %T') uptime=$(cat /proc/uptime|cut -d. -f1)s ===" >> "$LOG"
+while true; do
+    up=$(cat /proc/uptime 2>/dev/null | cut -d. -f1)
+    echo "$(date '+%F %T')  uptime=${up}s" >> "$LOG"
+    sleep 60
+done
+HB
+chmod +x /workspace/heartbeat.sh
+pkill -f "heartbeat.sh" 2>/dev/null; sleep 1
+
 # --- 用 setsid 彻底脱离当前会话（比单纯 nohup 更硬，扛得住 session 清理）---
 setsid nohup python3 "$SERVER"                 > /workspace/proxy.log    2>&1 < /dev/null &
 PROXY_PID=$!
 setsid nohup bash /workspace/proxy-watchdog.sh > /workspace/watchdog.log 2>&1 < /dev/null &
 WD_PID=$!
+setsid nohup bash /workspace/heartbeat.sh      > /dev/null              2>&1 < /dev/null &
+HB_PID=$!
 
 # --- 把自启动写进 ~/.bashrc：情况 B（沙箱重建）下，下次开终端自动复活 ---
 AUTOSTART="未变动"
