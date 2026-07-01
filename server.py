@@ -5,6 +5,7 @@ import json
 import os
 import ssl
 import urllib.request
+from urllib.parse import urlparse
 
 PORT = 8899
 GATEWAY = 'https://gateway.runloop.ai'
@@ -38,11 +39,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        if self.path == '/health':
+        path = urlparse(self.path).path
+        if path == '/health':
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b'ok')
-        elif self.path == '/v1/models':
+        elif path == '/v1/models':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -64,10 +66,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
-        if self.path == '/v1/messages':
+        parsed = urlparse(self.path)
+        if parsed.path == '/v1/messages':
             length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(length)
-            print(f'[proxy] /v1/messages ({length} bytes)')
+            print(f'[proxy] {self.path} ({length} bytes)')
 
             try:
                 data = json.loads(body)
@@ -90,7 +93,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     print(f'[proxy] Model mapped: {original_model} -> {data["model"]}')
 
                 body = json.dumps(data).encode()
+                # 把 query string 一起带给 gateway（claude 会发 ?beta=true）
                 url = GATEWAY + '/v1/messages'
+                if parsed.query:
+                    url += '?' + parsed.query
                 req = urllib.request.Request(url, data=body, method='POST')
                 req.add_header('Content-Type', 'application/json')
                 req.add_header('anthropic-version', '2023-06-01')
