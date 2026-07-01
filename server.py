@@ -99,8 +99,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     url += '?' + parsed.query
                 req = urllib.request.Request(url, data=body, method='POST')
                 req.add_header('Content-Type', 'application/json')
-                req.add_header('anthropic-version', '2023-06-01')
+                req.add_header('anthropic-version', self.headers.get('anthropic-version', '2023-06-01'))
                 req.add_header('x-api-key', KEY)
+                # 转发 claude 的 anthropic-beta（缺了它 gateway 可能 400）
+                beta = self.headers.get('anthropic-beta')
+                if beta:
+                    req.add_header('anthropic-beta', beta)
 
                 ctx = ssl.create_default_context()
                 resp = urllib.request.urlopen(req, context=ctx, timeout=300)
@@ -119,6 +123,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self.wfile.flush()
 
                 print('[proxy] Done')
+            except urllib.error.HTTPError as e:
+                # gateway 返回了错误状态码——把它的原始 body 打出来并原样回传
+                err_body = b''
+                try:
+                    err_body = e.read()
+                except Exception:
+                    pass
+                print(f'[proxy] Gateway HTTP {e.code}: {err_body[:800].decode("utf-8","replace")}')
+                self.send_response(e.code)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(err_body if err_body else json.dumps({'error': f'gateway {e.code}'}).encode())
             except Exception as e:
                 print(f'[proxy] Error: {e}')
                 self.send_response(502)
