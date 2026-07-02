@@ -12,6 +12,17 @@ PORT = 8899
 GATEWAY = 'https://gateway.runloop.ai'
 DEFAULT_MODEL = 'claude-opus-4-8'
 
+# 上游健康状态：搭真实 /v1/messages 流量的车被动记录，零额外开销。
+# /status 接口返回它，守护软件据此判断"活着但上游挂了"的僵死态。
+import time as _time
+UPSTREAM = {'ok': None, 'ts': 0.0, 'code': 0}  # ok=None 表示还没有真实流量
+
+
+def _mark_upstream(ok, code=0):
+    UPSTREAM['ok'] = bool(ok)
+    UPSTREAM['ts'] = _time.time()
+    UPSTREAM['code'] = code
+
 # 当前代码版本（git commit 短哈希）——/version 接口返回，用来确认沙箱是否已 git pull 到最新
 # [update-test 2026-07-03] 验证私有仓库 PAT 拉取 + 软件更新链路是否打通
 try:
@@ -60,6 +71,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(COMMIT.encode())
+        elif path == '/status':
+            # 深度健康：进程活着 + 最近真实请求上游是否成功。
+            # ok=None 表示还没真实流量（守护应据此只看 /health，别乱重启）。
+            age = (_time.time() - UPSTREAM['ts']) if UPSTREAM['ts'] else None
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'alive': True,
+                'upstream_ok': UPSTREAM['ok'],
+                'last_code': UPSTREAM['code'],
+                'age_sec': round(age, 1) if age is not None else None,
+            }).encode())
         elif path == '/v1/models':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -118,7 +143,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 import time as _t
                 resp = None
                 last_err = None
-                for attempt in range(6):
+                MAX_ATTEMPTS = 10
+                for attempt in range(MAX_ATTEMPTS):
                     try:
                         req = urllib.request.Request(url, data=body, method='POST')
                         req.add_header('Content-Type', 'application/json')
@@ -132,13 +158,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         last_err = e
                         # 401 和 5xx 是上游抖动，快速重试；4xx（非401）是真错，直接抛
                         if e.code == 401 or e.code >= 500:
-                            print(f'[proxy] gateway {e.code}, retry {attempt+1}/6')
-                            _t.sleep(0.4)
+                            back = min(0.4 * (attempt + 1), 2.0)  # 渐进退避，最多 2s
+                            print(f'[proxy] gateway {e.code}, retry {attempt+1}/{MAX_ATTEMPTS} (+{back}s)')
+                            _t.sleep(back)
                             continue
                         raise
+                    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+                        # 连接超时/被重置/DNS 抖动——沙箱网络抽风的常见形态，同样重试
+                        last_err = e
+                        back = min(0.4 * (attempt + 1), 2.0)
+                        print(f'[proxy] gateway conn error ({e}), retry {attempt+1}/{MAX_ATTEMPTS} (+{back}s)')
+                        _t.sleep(back)
+                        continue
                 if resp is None:
                     raise last_err
 
+                _mark_upstream(resp.status < 500, resp.status)
                 self.send_response(resp.status)
                 self.send_header('Content-Type', 'text/event-stream')
                 self.send_header('Cache-Control', 'no-cache')
@@ -161,12 +196,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 except Exception:
                     pass
                 print(f'[proxy] Gateway HTTP {e.code}: {err_body[:800].decode("utf-8","replace")}')
+                _mark_upstream(e.code < 500, e.code)
                 self.send_response(e.code)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
                 self.wfile.write(err_body if err_body else json.dumps({'error': f'gateway {e.code}'}).encode())
             except Exception as e:
                 print(f'[proxy] Error: {e}')
+                _mark_upstream(False, 502)
                 self.send_response(502)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
