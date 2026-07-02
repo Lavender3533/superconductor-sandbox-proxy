@@ -15,7 +15,10 @@ DEFAULT_MODEL = 'claude-opus-4-8'
 # 上游健康状态：搭真实 /v1/messages 流量的车被动记录，零额外开销。
 # /status 接口返回它，守护软件据此判断"活着但上游挂了"的僵死态。
 import time as _time
-UPSTREAM = {'ok': None, 'ts': 0.0, 'code': 0}  # ok=None 表示还没有真实流量
+UPSTREAM = {'ok': None, 'ts': 0.0, 'code': 0}  # 被动:搭真实流量的车记录
+PROBE = {'ok': None, 'ts': 0.0, 'code': 0}     # 主动:后台定时探测(补空闲盲区)
+PROBE_INTERVAL = 45   # 秒;每隔这么久主动 ping 一次上游
+PROBE_MODEL = 'claude-haiku-4-5'  # 用最便宜的模型探测
 
 
 def _mark_upstream(ok, code=0):
@@ -72,17 +75,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(COMMIT.encode())
         elif path == '/status':
-            # 深度健康：进程活着 + 最近真实请求上游是否成功。
-            # ok=None 表示还没真实流量（守护应据此只看 /health，别乱重启）。
-            age = (_time.time() - UPSTREAM['ts']) if UPSTREAM['ts'] else None
+            # 深度健康：进程活着 + 上游端到端是否真通。
+            # 判定优先级：60s 内的真实流量最权威 > 后台主动探测 > 未知。
+            # 这样即使空闲无流量，主动探测也能反映上游真实状态，杜绝"假活"。
+            now = _time.time()
+            traffic_age = (now - UPSTREAM['ts']) if UPSTREAM['ts'] else None
+            probe_age = (now - PROBE['ts']) if PROBE['ts'] else None
+            if traffic_age is not None and traffic_age <= 60:
+                overall, source, code, age = UPSTREAM['ok'], 'traffic', UPSTREAM['code'], traffic_age
+            elif probe_age is not None:
+                overall, source, code, age = PROBE['ok'], 'probe', PROBE['code'], probe_age
+            else:
+                overall, source, code, age = None, 'none', 0, None
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(json.dumps({
                 'alive': True,
-                'upstream_ok': UPSTREAM['ok'],
-                'last_code': UPSTREAM['code'],
+                'upstream_ok': overall,
+                'source': source,
+                'last_code': code,
                 'age_sec': round(age, 1) if age is not None else None,
             }).encode())
         elif path == '/v1/models':
@@ -252,7 +265,42 @@ def self_test():
             print(f'[test] {model} -> Error: {e}')
 
 
+def upstream_prober():
+    """后台每 PROBE_INTERVAL 秒主动 ping 一次上游,补足空闲时的健康盲区。
+    只测'能不能连通':拿到任何 <500 的响应就算上游可达(哪怕 4xx),
+    只有 5xx / 连接错误才判失败。用 haiku + max_tokens=1,成本可忽略,还兼做保活。"""
+    time.sleep(5)
+    ctx = ssl.create_default_context()
+    while True:
+        code = 0
+        try:
+            data = json.dumps({
+                'model': PROBE_MODEL,
+                'messages': [{'role': 'user', 'content': 'hi'}],
+                'max_tokens': 1,
+                'stream': False,
+            }).encode()
+            req = urllib.request.Request(GATEWAY + '/v1/messages', data=data, method='POST')
+            req.add_header('Content-Type', 'application/json')
+            req.add_header('anthropic-version', '2023-06-01')
+            req.add_header('x-api-key', KEY)
+            resp = urllib.request.urlopen(req, context=ctx, timeout=20)
+            resp.read()
+            code = resp.status
+            PROBE['ok'] = True
+        except urllib.error.HTTPError as e:
+            code = e.code
+            PROBE['ok'] = e.code < 500   # 4xx=上游可达;5xx=上游挂
+        except Exception:
+            PROBE['ok'] = False
+        PROBE['ts'] = _time.time()
+        PROBE['code'] = code
+        print(f'[probe] upstream {"OK" if PROBE["ok"] else "FAIL"} (code {code})')
+        time.sleep(PROBE_INTERVAL)
+
+
 threading.Thread(target=self_test, daemon=True).start()
+threading.Thread(target=upstream_prober, daemon=True).start()
 
 server = http.server.HTTPServer(('0.0.0.0', PORT), Handler)
 print(f'[proxy] Listening on http://0.0.0.0:{PORT}')
