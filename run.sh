@@ -125,8 +125,10 @@ if [ -n "$TURL" ]; then
         echo "      可用模型: gpt-5.5 / gpt-5 / o3 / o1 / gpt-4.1 / gpt-4o"
     fi
 else
-    echo "  ⚠ 未探测到 tunnel 地址，手动找: env | grep JUPYTER"
-    echo "    把输出里的 8888- 换成 8899- 就是你的地址"
+    echo "  ⚠ 本沙箱未在环境变量里暴露 tunnel 地址（Runloop 只在控制面下发）。"
+    echo "    这是正常的：用浏览器插件 SC Grabber 获取地址——它从 terminal.json"
+    echo "    抓到 8899 地址并自动推给 SC-Guard，软件里点「复制地址」即可。"
+    echo "    代理已在本机 8899 正常运行，不影响使用。"
 fi
 echo ""
 echo "  关掉终端后：进程靠 setsid 常驻；沙箱重建则下次开终端自动复活。"
