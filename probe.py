@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """直连 gateway.runloop.ai 逐个实测模型是否真实可用。
-用法（在 SC 沙箱里）: python3 probe.py
-读取沙箱环境变量 ANTHROPIC 作为 key。"""
+gateway 是内网(私有IP)，只能在 SC/Runloop 沙箱里跑。
+用法（在沙箱里）:
+    python3 probe.py                      # 用沙箱自带的 ANTHROPIC key
+    GW_KEY='gws_xxx' python3 probe.py     # 用朋友给的 gateway key 测（比如测 Fable 5）
+"""
 import os, json, ssl, urllib.request
 
-K = os.environ.get('ANTHROPIC', '')
+K = os.environ.get('GW_KEY') or os.environ.get('ANTHROPIC', '')
 CTX = ssl.create_default_context()
 
 # 要测的模型：Fable 5 各种可能写法 + 已知真实做对照
