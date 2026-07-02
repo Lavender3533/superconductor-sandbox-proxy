@@ -5,12 +5,22 @@ import http.server
 import json
 import os
 import ssl
+import subprocess
 import time
 import urllib.request
 from urllib.parse import urlparse
 
 PORT = 8899
 GATEWAY = 'https://gateway.runloop.ai'
+
+# 当前代码版本（git commit 短哈希）——/version 接口返回，用来确认沙箱是否已 git pull 到最新
+try:
+    COMMIT = subprocess.check_output(
+        ['git', 'rev-parse', '--short', 'HEAD'],
+        cwd=os.path.dirname(os.path.abspath(__file__)),
+        stderr=subprocess.DEVNULL).decode().strip()
+except Exception:
+    COMMIT = 'unknown'
 
 # 读取 OPENAI key
 KEY = os.environ.get('OPENAI') or os.environ.get('OPENAI_API_KEY') or ''
@@ -44,6 +54,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == '/health':
             self.send_response(200); self.end_headers(); self.wfile.write(b'ok'); return
+        if parsed.path == '/version':
+            self.send_response(200)
+            self.send_header('Access-Control-Allow-Origin', '*'); self.end_headers()
+            self.wfile.write(COMMIT.encode()); return
 
         length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(length) if length else None

@@ -4,12 +4,22 @@ import http.server
 import json
 import os
 import ssl
+import subprocess
 import urllib.request
 from urllib.parse import urlparse
 
 PORT = 8899
 GATEWAY = 'https://gateway.runloop.ai'
 DEFAULT_MODEL = 'claude-opus-4-8'
+
+# 当前代码版本（git commit 短哈希）——/version 接口返回，用来确认沙箱是否已 git pull 到最新
+try:
+    COMMIT = subprocess.check_output(
+        ['git', 'rev-parse', '--short', 'HEAD'],
+        cwd=os.path.dirname(os.path.abspath(__file__)),
+        stderr=subprocess.DEVNULL).decode().strip()
+except Exception:
+    COMMIT = 'unknown'
 
 # 读取 key
 KEY = os.environ.get('ANTHROPIC') or os.environ.get('ANTHROPIC_API_KEY') or ''
@@ -44,6 +54,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b'ok')
+        elif path == '/version':
+            self.send_response(200)
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(COMMIT.encode())
         elif path == '/v1/models':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
