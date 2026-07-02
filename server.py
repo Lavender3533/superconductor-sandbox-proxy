@@ -76,26 +76,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 data = json.loads(body)
                 original_model = data.get('model', '')
 
-                # 去掉 [1M] 等后缀，映射到 gateway 支持的模型名
-                # 注：clean_model(去掉[..]后缀)也会查一次，所以 [1m]/[1M] 变体自动命中
-                model_map = {
-                    'claude-opus-4-8': 'claude-opus-4-8',
-                    'claude-opus-4-8-20250612': 'claude-opus-4-8',
-                    'claude-opus-4-8[1m]': 'claude-opus-4-8',
-                    'claude-opus-4-8[1M]': 'claude-opus-4-8',
-                    'claude-sonnet-4-6': 'claude-opus-4-8',
+                # 策略：默认原样放行，绝不静默改模型。
+                # 只对 REMAP 里“gateway 不认的老名字”做指定改名；其它模型全部透传，
+                # 所以 claude-fable-5 / claude-opus-4-8 / claude-sonnet-5 等永远不会被误判成别的模型。
+                # gateway 若真不认某个名字，会回明确的 404，而不是悄悄变成 opus。
+                REMAP = {
+                    'claude-sonnet-4-6': 'claude-opus-4-8',        # gateway 无此名，替代为 opus
                     'claude-sonnet-4-6-20250514': 'claude-opus-4-8',
-                    'claude-sonnet-4-6[1m]': 'claude-opus-4-8',
-                    'claude-sonnet-4-6[1M]': 'claude-opus-4-8',
-                    # 实测 gateway 真实存在、原样放行的新模型
-                    'claude-fable-5': 'claude-fable-5',
-                    'claude-sonnet-5': 'claude-sonnet-5',
-                    'claude-haiku-4-5': 'claude-haiku-4-5',
                 }
-                clean_model = original_model.split('[')[0]
-                data['model'] = model_map.get(original_model) or model_map.get(clean_model) or DEFAULT_MODEL
+                clean_model = original_model.split('[')[0]         # 去掉 [1m]/[1M] 等后缀
+                data['model'] = REMAP.get(clean_model) or clean_model or DEFAULT_MODEL
                 if original_model != data['model']:
-                    print(f'[proxy] Model mapped: {original_model} -> {data["model"]}')
+                    print(f'[proxy] Model: {original_model} -> {data["model"]}')
 
                 body = json.dumps(data).encode()
                 # 把 query string 一起带给 gateway（claude 会发 ?beta=true）
