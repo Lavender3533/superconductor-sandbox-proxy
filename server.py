@@ -77,6 +77,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 original_model = data.get('model', '')
 
                 # 去掉 [1M] 等后缀，映射到 gateway 支持的模型名
+                # 注：clean_model(去掉[..]后缀)也会查一次，所以 [1m]/[1M] 变体自动命中
                 model_map = {
                     'claude-opus-4-8': 'claude-opus-4-8',
                     'claude-opus-4-8-20250612': 'claude-opus-4-8',
@@ -86,6 +87,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     'claude-sonnet-4-6-20250514': 'claude-opus-4-8',
                     'claude-sonnet-4-6[1m]': 'claude-opus-4-8',
                     'claude-sonnet-4-6[1M]': 'claude-opus-4-8',
+                    # 实测 gateway 真实存在、原样放行的新模型
+                    'claude-fable-5': 'claude-fable-5',
+                    'claude-sonnet-5': 'claude-sonnet-5',
+                    'claude-haiku-4-5': 'claude-haiku-4-5',
                 }
                 clean_model = original_model.split('[')[0]
                 data['model'] = model_map.get(original_model) or model_map.get(clean_model) or DEFAULT_MODEL
