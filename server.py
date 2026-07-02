@@ -13,6 +13,7 @@ GATEWAY = 'https://gateway.runloop.ai'
 DEFAULT_MODEL = 'claude-opus-4-8'
 
 # 当前代码版本（git commit 短哈希）——/version 接口返回，用来确认沙箱是否已 git pull 到最新
+# [update-test 2026-07-03] 验证私有仓库 PAT 拉取 + 软件更新链路是否打通
 try:
     COMMIT = subprocess.check_output(
         ['git', 'rev-parse', '--short', 'HEAD'],
