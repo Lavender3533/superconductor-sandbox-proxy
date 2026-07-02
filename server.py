@@ -63,18 +63,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
+            # app 的模型下拉直接读这个列表；实测 gateway 真实存在的模型放最前
+            _ids = [
+                'claude-fable-5', 'claude-fable-5[1m]',
+                'claude-opus-4-8', 'claude-opus-4-8[1m]',
+                'claude-sonnet-5', 'claude-sonnet-5[1m]',
+                'claude-haiku-4-5',
+                'claude-sonnet-4-6', 'claude-sonnet-4-6[1m]',
+            ]
             self.wfile.write(json.dumps({
                 'object': 'list',
-                'data': [
-                    {'id': 'claude-opus-4-8', 'object': 'model', 'owned_by': 'anthropic'},
-                    {'id': 'claude-opus-4-8[1m]', 'object': 'model', 'owned_by': 'anthropic'},
-                    {'id': 'claude-opus-4-8[1M]', 'object': 'model', 'owned_by': 'anthropic'},
-                    {'id': 'claude-sonnet-4-6', 'object': 'model', 'owned_by': 'anthropic'},
-                    {'id': 'claude-sonnet-4-6[1m]', 'object': 'model', 'owned_by': 'anthropic'},
-                    {'id': 'claude-sonnet-4-6[1M]', 'object': 'model', 'owned_by': 'anthropic'},
-                    {'id': 'claude-opus-4-8-20250612', 'object': 'model', 'owned_by': 'anthropic'},
-                    {'id': 'claude-sonnet-4-6-20250514', 'object': 'model', 'owned_by': 'anthropic'},
-                ]
+                'data': [{'id': m, 'object': 'model', 'owned_by': 'anthropic'} for m in _ids]
             }).encode())
         else:
             self.send_response(404)
