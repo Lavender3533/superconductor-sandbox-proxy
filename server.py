@@ -302,6 +302,11 @@ def upstream_prober():
 threading.Thread(target=self_test, daemon=True).start()
 threading.Thread(target=upstream_prober, daemon=True).start()
 
-server = http.server.HTTPServer(('0.0.0.0', PORT), Handler)
-print(f'[proxy] Listening on http://0.0.0.0:{PORT}')
+# 多线程：单线程 HTTPServer 会被一个长流式请求占死，期间所有 /health /status 探测
+# (guard 每10s + router 每22s + 客户端并发) 全排队超时 → 调度器误判节点死 → flapping/断流。
+# 换 ThreadingHTTPServer 让探测与流式并发共存。Handler 只做每请求转发，
+# 全局仅 PROBE(prober线程写、handler读，GIL下安全)，无共享写冲突。
+server = http.server.ThreadingHTTPServer(('0.0.0.0', PORT), Handler)
+server.daemon_threads = True
+print(f'[proxy] Listening on http://0.0.0.0:{PORT} (threaded)')
 server.serve_forever()

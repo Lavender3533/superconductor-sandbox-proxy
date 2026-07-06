@@ -117,5 +117,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         print(f'[http] {fmt % args}')
 
 
-print(f'[proxy-oai] Listening on http://0.0.0.0:{PORT}')
-http.server.HTTPServer(('0.0.0.0', PORT), Handler).serve_forever()
+print(f'[proxy-oai] Listening on http://0.0.0.0:{PORT} (threaded)')
+# 多线程：见 server.py 说明。单线程会被长流式占死导致探测超时/误判死/断流。
+_srv = http.server.ThreadingHTTPServer(('0.0.0.0', PORT), Handler)
+_srv.daemon_threads = True
+_srv.serve_forever()
